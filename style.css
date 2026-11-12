@@ -548,9 +548,12 @@ body {
   box-shadow: 0 0 12px rgba(249, 115, 22, 0.4);
 }
 
-/* Channel Toggle (Both/Left/Right) */
+/* Channel Section & Dual Insole Controls */
 .channel-section {
   margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .channel-toggle-group {
@@ -567,17 +570,110 @@ body {
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 8px 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 4px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
 }
 
 .channel-btn.active {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 87, 34, 0.2);
+  border: 1px solid rgba(255, 87, 34, 0.5);
   color: #fff;
+  box-shadow: 0 0 10px rgba(255, 87, 34, 0.25);
+}
+
+/* Canlı Çift Tabanlık Kartları */
+.dual-insole-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insole-pill {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+}
+
+.insole-pill:active {
+  transform: scale(0.97);
+}
+
+.insole-pill.active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 107, 0, 0.6);
+  box-shadow: 0 0 14px rgba(255, 107, 0, 0.2);
+}
+
+.pill-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4b5563;
+  box-shadow: 0 0 6px #4b5563;
+  transition: background 0.3s, box-shadow 0.3s;
+  flex-shrink: 0;
+}
+
+.insole-pill.active .pill-dot {
+  background: var(--current-heat-color, #ff5722);
+  box-shadow: 0 0 10px var(--current-heat-color, #ff5722);
+}
+
+.pill-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.pill-title {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+}
+
+.insole-pill.active .pill-title {
+  color: #ff9800;
+}
+
+.pill-temp {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.insole-link-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.insole-link-badge.active {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
 }
 
 /* Console Section */

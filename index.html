@@ -49,6 +49,34 @@
         </div>
       </section>
 
+      <!-- Çift Ayak / Bağımsız Sol-Sağ Kontrol Paneli -->
+      <section class="channel-section">
+        <div class="channel-toggle-group">
+          <button class="channel-btn active" data-channel="both" id="btnChannelBoth">👟 Çift (Senkron)</button>
+          <button class="channel-btn" data-channel="left" id="btnChannelLeft">🦶 Sol Ayak (R)</button>
+          <button class="channel-btn" data-channel="right" id="btnChannelRight">🦶 Sağ Ayak (B)</button>
+        </div>
+        
+        <!-- Canlı Durum Kartları -->
+        <div class="dual-insole-status">
+          <div class="insole-pill active" id="pillLeft" data-channel="left" title="Sol Ayarı Düzenle">
+            <div class="pill-dot"></div>
+            <div class="pill-info">
+              <span class="pill-title">SOL AYAK</span>
+              <span class="pill-temp" id="pillLeftTemp">%0 • 20°C</span>
+            </div>
+          </div>
+          <div class="insole-link-badge active" id="syncBadge" title="Senkronize Isıtma">🔗</div>
+          <div class="insole-pill active" id="pillRight" data-channel="right" title="Sağ Ayarı Düzenle">
+            <div class="pill-dot"></div>
+            <div class="pill-info">
+              <span class="pill-title">SAĞ AYAK</span>
+              <span class="pill-temp" id="pillRightTemp">%0 • 20°C</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Isı Kadranı (Circular Dial) & Hassas Kontroller -->
       <section class="dial-section">
         <div class="dial-container">
@@ -142,15 +170,6 @@
           <button class="chip" data-minutes="30">30 Dk</button>
           <button class="chip" data-minutes="45">45 Dk</button>
           <button class="chip" data-minutes="60">60 Dk</button>
-        </div>
-      </section>
-
-      <!-- Tabanlık Seçimi (Geleceğe Hazır Sol/Sağ/İkisi) -->
-      <section class="channel-section">
-        <div class="channel-toggle-group">
-          <button class="channel-btn active" data-channel="both">👟 Çift Tabanlık</button>
-          <button class="channel-btn" data-channel="left">Sol</button>
-          <button class="channel-btn" data-channel="right">Sağ</button>
         </div>
       </section>
 

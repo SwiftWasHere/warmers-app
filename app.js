@@ -22,7 +22,9 @@ const state = {
   characteristic: null,
   isConnected: false,
   isPoweredOn: false,
-  heatLevel: 0, // 0 - 100
+  activeChannel: 'both', // 'both' (Senkron) | 'left' (Sol - R) | 'right' (Sağ - B)
+  leftHeat: 0,   // Sol Tabanlık Isı Gücü: %0 - %100 (R Pini)
+  rightHeat: 0,  // Sağ Tabanlık Isı Gücü: %0 - %100 (B Pini)
   demoMode: false,
   timerDurationMinutes: 0,
   timerRemainingSeconds: 0,
@@ -37,6 +39,15 @@ const el = {
   connectLabel: document.getElementById('connectLabel'),
   deviceName: document.getElementById('deviceName'),
   powerSwitch: document.getElementById('powerSwitch'),
+  btnChannelBoth: document.getElementById('btnChannelBoth'),
+  btnChannelLeft: document.getElementById('btnChannelLeft'),
+  btnChannelRight: document.getElementById('btnChannelRight'),
+  channelBtns: document.querySelectorAll('.channel-btn'),
+  pillLeft: document.getElementById('pillLeft'),
+  pillRight: document.getElementById('pillRight'),
+  pillLeftTemp: document.getElementById('pillLeftTemp'),
+  pillRightTemp: document.getElementById('pillRightTemp'),
+  syncBadge: document.getElementById('syncBadge'),
   dialProgress: document.getElementById('dialProgress'),
   dialGlow: document.getElementById('dialGlow'),
   powerPercent: document.getElementById('powerPercent'),
@@ -140,11 +151,11 @@ async function connectBLE() {
     updateConnectionUI(true, state.device.name || "BLEDOM (Bağlandı)");
     log("Bağlantı kuruldu! Başlatma komutları gönderiliyor...", "tx");
 
-    // Tüm RGB kanallarını tam güce ayarla (Hangi pine bağlıysa akım geçebilsin)
-    await sendRGBFullPower();
+    // Master parlaklığı %100'e getir (PWM kontrolünü doğrudan RGB kanallarından yapacağız)
+    await sendRawCommand([0x7e, 0x00, 0x01, 0x64, 0x00, 0x00, 0x00, 0x00, 0xef]);
     // Cihazı Aç
     await setPowerState(true);
-    // Varsayılan %30 Ilık seviyeye getir
+    // Varsayılan %30 Ilık seviyeye getir (Her iki ayak için)
     setHeatLevel(30);
 
   } catch (error) {
@@ -214,44 +225,64 @@ async function sendRawCommand(hexArray) {
   }
 }
 
+// ==========================================
+// ÇİFT TABANLIK & HEX KOMUT GÖNDERİMİ
+// R = Sol Ayak | G = Boşta | B = Sağ Ayak
+// ==========================================
+
 // BLEDOM Güç Aç / Kapat
 async function setPowerState(on) {
   state.isPoweredOn = on;
   el.powerSwitch.checked = on;
 
   if (on) {
-    // Power ON Komutu: 7E 00 04 F0 00 01 FF 00 EF
     log("Güç AÇILIYOR...", "info");
+    // Power ON Komutu: 7E 00 04 F0 00 01 FF 00 EF
     await sendRawCommand([0x7e, 0x00, 0x04, 0xf0, 0x00, 0x01, 0xff, 0x00, 0xef]);
-    // Kanalların açık olduğundan emin ol
-    await sendRGBFullPower();
+    // Master parlaklığı %100 yap
+    await sendRawCommand([0x7e, 0x00, 0x01, 0x64, 0x00, 0x00, 0x00, 0x00, 0xef]);
+    
+    // Eğer her iki ayak da 0 ise varsayılan %30 ile başlat
+    if (state.leftHeat === 0 && state.rightHeat === 0) {
+      state.leftHeat = 30;
+      state.rightHeat = 30;
+    }
+    updateDialVisuals(getActiveHeat());
+    updatePillDisplays();
+    sendDualHeatCommand();
   } else {
-    // Power OFF Komutu: 7E 00 04 00 00 00 FF 00 EF
     log("Güç KAPATILIYOR...", "info");
+    // Power OFF Komutu: 7E 00 04 00 00 00 FF 00 EF
     await sendRawCommand([0x7e, 0x00, 0x04, 0x00, 0x00, 0x00, 0xff, 0x00, 0xef]);
+    // Akımı tamamen kes (RGB = 0)
+    await sendRawCommand([0x7e, 0x00, 0x05, 0x03, 0x00, 0x00, 0x00, 0x00, 0xef]);
   }
 }
 
-// Tabanlığın bağlı olduğu RGB hattını %100 duty-cycle'a ayarla
-// Komut: 7E 00 05 03 [R] [G] [B] 00 EF
-async function sendRGBFullPower() {
-  // Tüm renk kanallarını (R=255, G=255, B=255) açıyoruz.
-  // Böylece kablonuz kırmızı, yeşil ya da mavi pinlerden hangisine lehimliyse çalışır.
-  await sendRawCommand([0x7e, 0x00, 0x05, 0x03, 0xff, 0xff, 0xff, 0x00, 0xef]);
+// Sol (R) ve Sağ (B) Tabanlık Bağımsız Isı Gönderimi
+let dualThrottleTimeout = null;
+function sendDualHeatCommand() {
+  if (dualThrottleTimeout) clearTimeout(dualThrottleTimeout);
+
+  dualThrottleTimeout = setTimeout(async () => {
+    // Sol Ayak = Red Pini (0 - 255 PWM duty-cycle)
+    const redByte = Math.round((state.leftHeat / 100) * 255);
+    // Yeşil Pin = Boşta (0)
+    const greenByte = 0x00;
+    // Sağ Ayak = Blue Pini (0 - 255 PWM duty-cycle)
+    const blueByte = Math.round((state.rightHeat / 100) * 255);
+
+    // BLEDOM RGB Renk Komutu: 7E 00 05 03 [R] [G] [B] 00 EF
+    await sendRawCommand([0x7e, 0x00, 0x05, 0x03, redByte, greenByte, blueByte, 0x00, 0xef]);
+    log(`Dual PWM ➔ Sol (R): %${state.leftHeat} [0x${redByte.toString(16).padStart(2, '0').toUpperCase()}] | Sağ (B): %${state.rightHeat} [0x${blueByte.toString(16).padStart(2, '0').toUpperCase()}]`, "tx");
+  }, 40);
 }
 
-// Isı / Parlaklık (PWM Duty-Cycle) Ayarı
-// Komut: 7E 00 01 [GÜÇ_0-100] 00 00 00 00 EF
-let throttleTimeout = null;
-function sendHeatPowerCommand(percent) {
-  // Aşırı komut yığılmasını önlemek için 50ms debouncing
-  if (throttleTimeout) clearTimeout(throttleTimeout);
-
-  throttleTimeout = setTimeout(async () => {
-    // 0-100 aralığını doğrudan hex olarak gönder
-    const powerHex = Math.max(0, Math.min(100, Math.round(percent)));
-    await sendRawCommand([0x7e, 0x00, 0x01, powerHex, 0x00, 0x00, 0x00, 0x00, 0xef]);
-  }, 40);
+// Aktif kanalın ısı seviyesini döndürür
+function getActiveHeat() {
+  if (state.activeChannel === 'left') return state.leftHeat;
+  if (state.activeChannel === 'right') return state.rightHeat;
+  return state.leftHeat || state.rightHeat || 0;
 }
 
 // ==========================================
@@ -259,11 +290,9 @@ function sendHeatPowerCommand(percent) {
 // ==========================================
 
 function updateKnobPosition(percent) {
-  // Yüzdeye karşılık gelen yay açısı
   const angleDeg = START_ANGLE + (percent / 100) * SWEEP_ANGLE;
   const angleRad = (angleDeg * Math.PI) / 180;
   
-  // (CX, CY) etrafında RADIUS yarıçapında kartezyen koordinatlar
   const x = CX + RADIUS * Math.cos(angleRad);
   const y = CY + RADIUS * Math.sin(angleRad);
   
@@ -275,14 +304,9 @@ function updateKnobPosition(percent) {
   el.knobCenter.setAttribute('cy', y.toFixed(2));
 }
 
-function setHeatLevel(percent, sendCommand = true) {
+// Kadran Görsellerini Güncelle
+function updateDialVisuals(percent) {
   percent = Math.max(0, Math.min(100, Math.round(percent)));
-  state.heatLevel = percent;
-
-  // Güç %0 ise şalteri de senkronize et
-  if (percent > 0 && !state.isPoweredOn) {
-    setPowerState(true);
-  }
 
   // Değerleri Güncelle
   el.powerPercent.textContent = percent;
@@ -291,14 +315,14 @@ function setHeatLevel(percent, sendCommand = true) {
   const estimatedTemp = Math.round(20 + (percent * 0.20));
   el.tempEstimate.textContent = estimatedTemp;
 
-  // 240 Derecelik Termostat Yayı İlerlemesi (Stroke Dashoffset)
+  // 240 Derecelik Termostat Yayı İlerlemesi
   const offset = ARC_LENGTH * (1 - (percent / 100));
   el.dialProgress.style.strokeDashoffset = offset;
 
-  // Sürüklenebilir Topun (Knob) Konumunu Güncelle
+  // Sürüklenebilir Topun (Knob) Konumu
   updateKnobPosition(percent);
 
-  // Isı Seviyesine Göre Dinamik Renk ve Mod Belirleme
+  // Isı Seviyesine Göre Renk ve Mod
   let modeName = "KAPALI";
   let heatColor = "var(--heat-off)";
 
@@ -319,7 +343,9 @@ function setHeatLevel(percent, sendCommand = true) {
     heatColor = "var(--heat-turbo)";
   }
 
-  el.modeBadge.textContent = modeName;
+  // Mod Rozetine Kanal Bilgisini Ekle
+  const channelPrefix = state.activeChannel === 'left' ? 'SOL: ' : state.activeChannel === 'right' ? 'SAĞ: ' : '';
+  el.modeBadge.textContent = channelPrefix + modeName;
   document.documentElement.style.setProperty('--current-heat-color', heatColor);
 
   // Preset Butonlarının Aktiflik Durumu
@@ -331,15 +357,77 @@ function setHeatLevel(percent, sendCommand = true) {
       card.classList.remove('active');
     }
   });
+}
 
-  // Haptic Feedback (Telefon Destekliyorsa)
+// Canlı Çift Tabanlık Kartlarını Güncelle
+function updatePillDisplays() {
+  const leftTemp = Math.round(20 + state.leftHeat * 0.20);
+  const rightTemp = Math.round(20 + state.rightHeat * 0.20);
+
+  el.pillLeftTemp.textContent = `%${state.leftHeat} • ${leftTemp}°C`;
+  el.pillRightTemp.textContent = `%${state.rightHeat} • ${rightTemp}°C`;
+}
+
+// Kanal Değiştirme (Çift / Sol / Sağ)
+function setActiveChannel(channel) {
+  state.activeChannel = channel;
+
+  // Tab Butonlarını Güncelle
+  el.channelBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.channel === channel);
+  });
+
+  // Kartları ve Senkron İkonunu Güncelle
+  if (channel === 'both') {
+    el.pillLeft.classList.add('active');
+    el.pillRight.classList.add('active');
+    el.syncBadge.classList.add('active');
+  } else if (channel === 'left') {
+    el.pillLeft.classList.add('active');
+    el.pillRight.classList.remove('active');
+    el.syncBadge.classList.remove('active');
+  } else if (channel === 'right') {
+    el.pillLeft.classList.remove('active');
+    el.pillRight.classList.add('active');
+    el.syncBadge.classList.remove('active');
+  }
+
+  // Kadranı seçilen kanalın sıcaklığına getir
+  const currentHeat = getActiveHeat();
+  updateDialVisuals(currentHeat);
+  log(`Kanal seçildi: ${channel === 'both' ? 'Çift Tabanlık (Senkron)' : channel === 'left' ? 'Sol Ayak (R)' : 'Sağ Ayak (B)'}`, "info");
+}
+
+function setHeatLevel(percent, sendCommand = true) {
+  percent = Math.max(0, Math.min(100, Math.round(percent)));
+
+  // Güç %0 ise şalteri de senkronize et
+  if (percent > 0 && !state.isPoweredOn) {
+    setPowerState(true);
+  }
+
+  // Seçili kanala göre state'i güncelle
+  if (state.activeChannel === 'both') {
+    state.leftHeat = percent;
+    state.rightHeat = percent;
+  } else if (state.activeChannel === 'left') {
+    state.leftHeat = percent;
+  } else if (state.activeChannel === 'right') {
+    state.rightHeat = percent;
+  }
+
+  // Arayüzü güncelle
+  updateDialVisuals(percent);
+  updatePillDisplays();
+
+  // Titreşim
   if (window.navigator && window.navigator.vibrate && sendCommand) {
     window.navigator.vibrate(8);
   }
 
   // Cihaza Komut Gönder
   if (sendCommand && (state.isConnected || state.demoMode)) {
-    sendHeatPowerCommand(percent);
+    sendDualHeatCommand();
   }
 }
 
@@ -439,7 +527,8 @@ el.btnStepDown.addEventListener('click', () => {
     alert("Önce 'Bağlan' butonuna dokunun veya Demo Modunu açın.");
     return;
   }
-  setHeatLevel(Math.max(0, state.heatLevel - 5));
+  const current = getActiveHeat();
+  setHeatLevel(Math.max(0, current - 5));
 });
 
 el.btnStepUp.addEventListener('click', () => {
@@ -447,8 +536,31 @@ el.btnStepUp.addEventListener('click', () => {
     alert("Önce 'Bağlan' butonuna dokunun veya Demo Modunu açın.");
     return;
   }
-  setHeatLevel(Math.min(100, state.heatLevel + 5));
+  const current = getActiveHeat();
+  setHeatLevel(Math.min(100, current + 5));
 });
+
+// ==========================================
+// ÇİFT TABANLIK KANAL ETKİLEŞİMİ (SOL / SAĞ)
+// ==========================================
+
+if (el.btnChannelBoth) el.btnChannelBoth.addEventListener('click', () => setActiveChannel('both'));
+if (el.btnChannelLeft) el.btnChannelLeft.addEventListener('click', () => setActiveChannel('left'));
+if (el.btnChannelRight) el.btnChannelRight.addEventListener('click', () => setActiveChannel('right'));
+
+if (el.pillLeft) el.pillLeft.addEventListener('click', () => setActiveChannel('left'));
+if (el.pillRight) el.pillRight.addEventListener('click', () => setActiveChannel('right'));
+
+if (el.syncBadge) {
+  el.syncBadge.addEventListener('click', () => {
+    // Senkronizasyon butonu: her iki ayağı eşitler ve senkron moda alır
+    const current = getActiveHeat() || 30;
+    state.leftHeat = current;
+    state.rightHeat = current;
+    setActiveChannel('both');
+    setHeatLevel(current);
+  });
+}
 
 // ==========================================
 // ZAMANLAYICI (TIMER) MANTIĞI
@@ -525,7 +637,7 @@ el.powerSwitch.addEventListener('change', (e) => {
   setPowerState(isChecked);
   if (!isChecked) {
     setHeatLevel(0);
-  } else if (state.heatLevel === 0) {
+  } else if (getActiveHeat() === 0) {
     setHeatLevel(30);
   }
 });
@@ -539,8 +651,11 @@ function simulateConnect() {
   updateConnectionUI(true, "BLEDOM (Demo Simülatör)");
   state.isConnected = true;
   setPowerState(true);
-  setHeatLevel(40);
-  log("Demo Modu hazır! Isı kadranını ve modları test edebilirsiniz.", "tx");
+  state.leftHeat = 40;
+  state.rightHeat = 40;
+  updateDialVisuals(40);
+  updatePillDisplays();
+  log("Demo Modu hazır! Çift tabanlık bağımsız ayarını test edebilirsiniz.", "tx");
 }
 
 el.demoModeCheckbox.addEventListener('change', (e) => {
@@ -566,6 +681,7 @@ el.clearLogBtn.addEventListener('click', () => {
 el.btnConnect.addEventListener('click', connectBLE);
 
 // Başlangıç Durumu
+setActiveChannel('both');
 setHeatLevel(0, false);
 log("Warmers App yüklendi. Bluetooth cihazı hazır.", "info");
 
